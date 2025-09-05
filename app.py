@@ -14,29 +14,44 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+/* Background gradient */
+body {
+    background: linear-gradient(160deg, #fff7ed, #fee2e2);
+}
+
+/* Hero section */
 .hero {
     background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
-    padding: 28px 20px; border-radius: 16px; color: white;
-    text-align: center; margin-bottom: 20px; box-shadow: 0 8px 16px rgba(0,0,0,0.25);
-    transition: transform 0.3s ease;
+    padding: 30px 20px; border-radius: 20px;
+    color: white; text-align: center; margin-bottom: 25px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    transition: transform 0.4s ease;
 }
-.hero:hover {transform: scale(1.02);}
-.hero h1 {margin: 0; font-size: 2.2rem;}
-.hero p {margin-top: 4px; opacity: 0.9; font-size:1.1rem;}
+.hero:hover {transform: scale(1.03);}
+.hero h1 {margin: 0; font-size: 2.5rem;}
+.hero p {margin-top: 5px; opacity: 0.9; font-size:1.2rem;}
+
+/* Card */
 .card {
-    border-radius: 16px; padding: 20px;
-    background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.15)); 
-    margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: transform 0.2s ease;
+    border-radius: 20px; padding: 22px;
+    background: rgba(255,255,255,0.15);
+    margin-bottom: 18px; border: 1px solid rgba(255,255,255,0.2);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    backdrop-filter: blur(8px);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
-.card:hover {transform: translateY(-5px);}
-.prob-bar {height:12px; background:#e5e7eb; border-radius:999px; overflow:hidden; margin-bottom:6px;}
-.prob-fill {height:100%; border-radius:999px; transition: width 0.5s ease;}
+.card:hover {transform: translateY(-7px); box-shadow: 0 10px 30px rgba(0,0,0,0.3);}
+
+/* Probability bar */
+.prob-bar {height:14px; background:#e5e7eb; border-radius:999px; overflow:hidden; margin-bottom:8px;}
+.prob-fill {height:100%; border-radius:999px; transition: width 0.6s ease;}
+
+/* Hide default footer */
 footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------------------- HERO SECTION ----------------------------
+# ---------------------------- HERO ----------------------------
 st.markdown("""
 <div class="hero">
     <h1>🍔🍣 Food-101 Classifier</h1>
@@ -44,7 +59,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------------------- Model Loader ----------------------------
+# ---------------------------- Load Model ----------------------------
 @st.cache_resource
 def load_model(path="pretrain_food.keras"):
     if not os.path.isfile(path):
@@ -59,7 +74,7 @@ try:
 except Exception as e:
     st.error(f"Failed to load model: {e}")
 
-# ---------------------------- Classes ----------------------------
+# ---------------------------- Load Classes ----------------------------
 @st.cache_resource
 def load_classes(path="food101_classes.txt") -> List[str]:
     with open(path) as f:
@@ -83,7 +98,7 @@ def infer_image(pil_img: Image.Image, topk: int = 5):
     probs = tf.nn.softmax(logits, axis=1).numpy()[0]
     idxs = probs.argsort()[::-1][:topk]
 
-    col1, col2 = st.columns([0.5,0.5])
+    col1, col2 = st.columns([0.55,0.45])
     with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.image(pil_img, caption="📸 Input Image", use_container_width=True)
@@ -93,7 +108,7 @@ def infer_image(pil_img: Image.Image, topk: int = 5):
         st.markdown(f"### 🎯 Prediction\n**{class_names[idxs[0]]}** · {probs[idxs[0]]*100:.2f}%")
         st.caption(f"Latency: {dt:.1f} ms")
         for i in idxs:
-            st.write(f"🍽️ {class_names[i]}: {probs[i]*100:.2f}%")
+            st.markdown(f"🍽️ **{class_names[i]}**: {probs[i]*100:.2f}%")
             st.markdown(f"""
                 <div class="prob-bar">
                     <div class="prob-fill" style="width:{probs[i]*100:.2f}%;
