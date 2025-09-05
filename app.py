@@ -4,7 +4,6 @@ import numpy as np
 from PIL import Image, ImageOps
 import streamlit as st
 import tensorflow as tf
-import tensorflow_model_optimization as tfmot  # <─ Tambahan untuk pruning
 
 # ---------------------------- CONFIG / STYLE ----------------------------
 st.set_page_config(
@@ -18,17 +17,21 @@ st.markdown("""
 .hero {
     background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
     padding: 28px 20px; border-radius: 16px; color: white;
-    text-align: center; margin-bottom: 20px;
+    text-align: center; margin-bottom: 20px; box-shadow: 0 8px 16px rgba(0,0,0,0.25);
+    transition: transform 0.3s ease;
 }
-.hero h1 {margin: 0; font-size: 2rem;}
-.hero p {margin-top: 4px; opacity: 0.9;}
+.hero:hover {transform: scale(1.02);}
+.hero h1 {margin: 0; font-size: 2.2rem;}
+.hero p {margin-top: 4px; opacity: 0.9; font-size:1.1rem;}
 .card {
-    border-radius: 16px; padding: 18px;
-    background: rgba(255,255,255,0.05); margin-bottom: 16px;
-    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px; padding: 20px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.15)); 
+    margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: transform 0.2s ease;
 }
-.prob-bar {height:10px; background:#e5e7eb; border-radius:999px; overflow:hidden;}
-.prob-fill {height:100%; border-radius:999px;}
+.card:hover {transform: translateY(-5px);}
+.prob-bar {height:12px; background:#e5e7eb; border-radius:999px; overflow:hidden; margin-bottom:6px;}
+.prob-fill {height:100%; border-radius:999px; transition: width 0.5s ease;}
 footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
@@ -41,41 +44,18 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------------------- Sidebar ----------------------------
-st.sidebar.header("⚙️ Optimization")
-opt_choice = st.sidebar.selectbox(
-    "Pilih optimisasi model",
-    ["None", "Quantization", "Pruning"]
-)
-
 # ---------------------------- Model Loader ----------------------------
 @st.cache_resource
-def load_model(path="pretrain_food.keras", optimization="None"):
+def load_model(path="pretrain_food.keras"):
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Model file not found: {path}")
-    base_model = tf.keras.models.load_model(path, compile=False)
+    return tf.keras.models.load_model(path, compile=False)
 
-    if optimization == "Quantization":
-        converter = tf.lite.TFLiteConverter.from_keras_model(base_model)
-        converter.optimizations = [tf.lite.Optimize.DEFAULT]
-        tflite_model = converter.convert()
-        return ("tflite", tflite_model)
-
-    elif optimization == "Pruning":
-        prune_low_magnitude = tfmot.sparsity.keras.prune_low_magnitude
-        pruning_params = {"pruning_schedule": tfmot.sparsity.keras.ConstantSparsity(0.5, 0)}
-        pruned_model = prune_low_magnitude(base_model, **pruning_params)
-        pruned_model.compile()
-        return ("keras", pruned_model)
-
-    else:
-        return ("keras", base_model)
-
-backend, model = None, None
+model = None
 try:
     with st.spinner("Loading Food-101 model..."):
-        backend, model = load_model(optimization=opt_choice)
-    st.success(f"✅ Model loaded ({opt_choice})")
+        model = load_model()
+    st.success("✅ Model loaded")
 except Exception as e:
     st.error(f"Failed to load model: {e}")
 
@@ -97,33 +77,23 @@ def infer_image(pil_img: Image.Image, topk: int = 5):
     if model is None: return
     x = preprocess_pil(pil_img, 224)
     t0 = time.time()
-
-    if backend == "tflite":
-        interpreter = tf.lite.Interpreter(model_content=model)
-        interpreter.allocate_tensors()
-        input_idx = interpreter.get_input_details()[0]["index"]
-        output_idx = interpreter.get_output_details()[0]["index"]
-        interpreter.set_tensor(input_idx, x.astype(np.float32))
-        interpreter.invoke()
-        logits = interpreter.get_tensor(output_idx)
-    else:
-        logits = model.predict(x)
-
+    logits = model.predict(x)
     dt = (time.time()-t0)*1000
+
     probs = tf.nn.softmax(logits, axis=1).numpy()[0]
     idxs = probs.argsort()[::-1][:topk]
 
     col1, col2 = st.columns([0.5,0.5])
     with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.image(pil_img, caption="Input Image", use_container_width=True)
+        st.image(pil_img, caption="📸 Input Image", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🎯 Prediction\n**{class_names[idxs[0]]}** · {probs[idxs[0]]*100:.2f}%")
         st.caption(f"Latency: {dt:.1f} ms")
         for i in idxs:
-            st.write(f"{class_names[i]}: {probs[i]*100:.2f}%")
+            st.write(f"🍽️ {class_names[i]}: {probs[i]*100:.2f}%")
             st.markdown(f"""
                 <div class="prob-bar">
                     <div class="prob-fill" style="width:{probs[i]*100:.2f}%;
