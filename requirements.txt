@@ -1,10 +1,5 @@
 streamlit
 tensorflow
-Pillow
-opencv-python-headless
-numpy
-rich
-markdown-it-py
-mdurl
-pygments
 tensorflow-model-optimization
+pillow
+numpy
