@@ -3,6 +3,8 @@ from typing import List
 import numpy as np
 from PIL import Image, ImageOps
 import streamlit as st
+import tensorflow as tf
+import tensorflow_model_optimization as tfmot  # <─ Tambahan untuk pruning
 
 # ---------------------------- CONFIG / STYLE ----------------------------
 st.set_page_config(
@@ -39,20 +41,41 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------------------- Model Loader ----------------------------
-import tensorflow as tf
+# ---------------------------- Sidebar ----------------------------
+st.sidebar.header("⚙️ Optimization")
+opt_choice = st.sidebar.selectbox(
+    "Pilih optimisasi model",
+    ["None", "Quantization", "Pruning"]
+)
 
+# ---------------------------- Model Loader ----------------------------
 @st.cache_resource
-def load_model(path="pretrain_food.keras"):
+def load_model(path="pretrain_food.keras", optimization="None"):
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Model file not found: {path}")
-    return tf.keras.models.load_model(path, compile=False)
+    base_model = tf.keras.models.load_model(path, compile=False)
 
-model = None
+    if optimization == "Quantization":
+        converter = tf.lite.TFLiteConverter.from_keras_model(base_model)
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        tflite_model = converter.convert()
+        return ("tflite", tflite_model)
+
+    elif optimization == "Pruning":
+        prune_low_magnitude = tfmot.sparsity.keras.prune_low_magnitude
+        pruning_params = {"pruning_schedule": tfmot.sparsity.keras.ConstantSparsity(0.5, 0)}
+        pruned_model = prune_low_magnitude(base_model, **pruning_params)
+        pruned_model.compile()
+        return ("keras", pruned_model)
+
+    else:
+        return ("keras", base_model)
+
+backend, model = None, None
 try:
     with st.spinner("Loading Food-101 model..."):
-        model = load_model()
-    st.success("✅ Model loaded")
+        backend, model = load_model(optimization=opt_choice)
+    st.success(f"✅ Model loaded ({opt_choice})")
 except Exception as e:
     st.error(f"Failed to load model: {e}")
 
@@ -74,9 +97,19 @@ def infer_image(pil_img: Image.Image, topk: int = 5):
     if model is None: return
     x = preprocess_pil(pil_img, 224)
     t0 = time.time()
-    logits = model.predict(x)
-    dt = (time.time()-t0)*1000
 
+    if backend == "tflite":
+        interpreter = tf.lite.Interpreter(model_content=model)
+        interpreter.allocate_tensors()
+        input_idx = interpreter.get_input_details()[0]["index"]
+        output_idx = interpreter.get_output_details()[0]["index"]
+        interpreter.set_tensor(input_idx, x.astype(np.float32))
+        interpreter.invoke()
+        logits = interpreter.get_tensor(output_idx)
+    else:
+        logits = model.predict(x)
+
+    dt = (time.time()-t0)*1000
     probs = tf.nn.softmax(logits, axis=1).numpy()[0]
     idxs = probs.argsort()[::-1][:topk]
 
@@ -126,5 +159,3 @@ with tab3:
     Dataset ini pertama kali diperkenalkan oleh **ETH Zurich** dan sering dipakai untuk 
     menguji CNN maupun arsitektur modern (ResNet, ViT, EfficientNet).  
     """)
-
-# -----------------------------------------------------------------------
